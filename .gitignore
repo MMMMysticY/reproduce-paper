@@ -19,7 +19,6 @@
 *.rar
 *.mp4
 *.pkl
-*.txt
 *.mp3
 *.wav
 *.pth
