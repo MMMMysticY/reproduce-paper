@@ -32,25 +32,29 @@ class CrossAttentionWithMediaMask(tf.keras.Model):
             units=self.inner_dim,
             use_bias=False,
             name='query',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
         self.key_layer = tf.keras.layers.Dense(
             units=self.inner_dim,
             use_bias=False,
             name='key',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
         self.value_layer = tf.keras.layers.Dense(
             units=self.inner_dim,
             use_bias=False,
             name='value',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
         self.output_layer = tf.keras.layers.Dense(
             units=self.dim,
             use_bias=False,
             name='output',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
         self.layer_norm = tf.keras.layers.LayerNormalization()
 
@@ -79,8 +83,8 @@ class CrossAttentionWithMediaMask(tf.keras.Model):
 
         visual_feature_shape = modeling.get_shape_list(visual_feature, expected_rank=3)
         language_feature_shape = modeling.get_shape_list(language_feature, expected_rank=3)
-        assert visual_feature_shape[0] == language_feature_shape[0]
-        assert visual_feature_shape[2] == language_feature_shape[2]
+        # assert visual_feature_shape[0] == language_feature_shape[0]
+        # assert visual_feature_shape[2] == language_feature_shape[2]
         batch = visual_feature_shape[0]
         seq_len_vision = visual_feature_shape[1]
         seq_len_language = language_feature_shape[1]
@@ -190,30 +194,10 @@ def main():
     language_feature = tf.random.normal(shape=(batch, seq_len_language, dim))
     output = attn_block(inputs=(visual_feature, language_feature))
     print(output)
-    print('weights: ', len(attn_block.weights))
-    print('trainable weights: ', len(attn_block.trainable_weights))
-    print('non trainable weights: ', len(attn_block.non_trainable_weights))
-    print('trainable variables: ', len(attn_block.trainable_variables))
-    print('non trainable variables: ', len(attn_block.non_trainable_variables))
-    print('layers: ', attn_block.layers)
-    print('-----------------------------------------------------')
-    print('trainable = False')
-    attn_block.trainable = False
-    print('weights: ', len(attn_block.weights))
-    print('trainable weights: ', len(attn_block.trainable_weights))
-    print('non trainable weights: ', len(attn_block.non_trainable_weights))
-    print('trainable variables: ', len(attn_block.trainable_variables))
-    print('non trainable variables: ', len(attn_block.non_trainable_variables))
-    # print('layers: ', attn_block.layers)
-    print('-----------------------------------------------------')
-    print('layers[0] trainable = False')
-    attn_block.trainable = True
-    attn_block.layers[0].trainable = False
-    print('weights: ', len(attn_block.weights))
-    print('trainable weights: ', len(attn_block.trainable_weights))
-    print('non trainable weights: ', len(attn_block.non_trainable_weights))
-    print('trainable variables: ', len(attn_block.trainable_variables))
-    print('non trainable variables: ', len(attn_block.non_trainable_variables))
+    print(attn_block.summary())
+    for layer in attn_block.layers:
+        for weight in layer.weights:
+            print(weight.name, weight.shape)
 
 
 if __name__ == '__main__':

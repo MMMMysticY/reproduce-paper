@@ -30,25 +30,29 @@ class PerceiverAttention(tf.keras.Model):
             units=self.inner_dim,
             use_bias=False,
             name='query',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
         self.key_layer = tf.keras.layers.Dense(
             units=self.inner_dim,
             use_bias=False,
             name='key',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
         self.value_layer = tf.keras.layers.Dense(
             units=self.inner_dim,
             use_bias=False,
             name='value',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
         self.output_layer = tf.keras.layers.Dense(
             units=self.dim,
             use_bias=False,
             name='output',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
 
     def transpose_for_scores(self, input_tensor, batch_size, n_head, seq_length, head_dim):
@@ -77,8 +81,8 @@ class PerceiverAttention(tf.keras.Model):
 
         image_feature_shape = modeling.get_shape_list(image_feature, expected_rank=3)
         latent_queries_shape = modeling.get_shape_list(latent_queries, expected_rank=3)
-        assert image_feature_shape[0] == latent_queries_shape[0]
-        assert image_feature_shape[-1] == latent_queries_shape[-1] == self.dim
+        # assert image_feature_shape[0] == latent_queries_shape[0]
+        # assert image_feature_shape[-1] == latent_queries_shape[-1] == self.dim
         batch = image_feature_shape[0]
         seq_len_img = image_feature_shape[1]
         seq_len_target = latent_queries_shape[1]
@@ -159,9 +163,9 @@ class PerceiverResampler(tf.keras.Model):
         输出:
             latent_queries 图像特征的整体融合特征向量 [batch, seq_len_target, dim]
         """
-        image_feature_shape = inputs.shape
+        image_feature_shape = modeling.get_shape_list(inputs, expected_rank=3)
         batch = image_feature_shape[0]
-        assert self.dim == image_feature_shape[2]
+        # assert self.dim == image_feature_shape[2]
 
         image_feature = inputs
         # image_feature [batch, seq_len_image, dim]
@@ -192,6 +196,9 @@ def main():
     output = perceiver_resampler(image_feature)
     print(output)
     print(perceiver_resampler.trainable_weights)
+    for layer in perceiver_resampler.layers:
+        for weight in layer.weights:
+            print(weight.name, weight.shape)
 
 
 if __name__ == '__main__':

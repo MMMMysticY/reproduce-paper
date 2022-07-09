@@ -1,6 +1,7 @@
 import tensorflow as tf
 import modeling
 import utils
+import pickle
 
 
 # 本方法实现tf.keras.Model风格的广义attention + feedforward结构
@@ -25,27 +26,31 @@ class Attention(tf.keras.Model):
         self.scale = self.head_dim ** -0.5  # scale是1/根号下dk
         self.query_layer = tf.keras.layers.Dense(
             units=self.inner_dim,
-            use_bias=False,
+            # use_bias=False,
             name='query',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
         self.key_layer = tf.keras.layers.Dense(
             units=self.inner_dim,
-            use_bias=False,
+            # use_bias=False,
             name='key',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
         self.value_layer = tf.keras.layers.Dense(
             units=self.inner_dim,
-            use_bias=False,
+            # use_bias=False,
             name='value',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
         self.output_layer = tf.keras.layers.Dense(
             units=self.dim,
-            use_bias=False,
+            # use_bias=False,
             name='output',
-            kernel_initializer=modeling.create_initializer(initializer_range)
+            # kernel_initializer=modeling.create_initializer(initializer_range)
+            kernel_initializer=tf.keras.initializers.RandomNormal()
         )
 
     def transpose_for_scores(self, input_tensor, batch_size, n_head, seq_length, head_dim):
@@ -71,8 +76,8 @@ class Attention(tf.keras.Model):
         from_tensor, to_tensor = inputs[:2]
         from_shape = modeling.get_shape_list(from_tensor, expected_rank=3)
         to_shape = modeling.get_shape_list(to_tensor, expected_rank=3)
-        assert from_shape[0] == to_shape[0]
-        assert from_shape[-1] == to_shape[-1] == self.dim
+        # assert from_shape[0] == to_shape[0]
+        # assert from_shape[-1] == to_shape[-1] == self.dim
         batch = from_shape[0]
         seq_len_from = from_shape[1]
         seq_len_to = to_shape[1]
@@ -131,21 +136,21 @@ class LMBlock(tf.keras.Model):
             dim: cross attention变量的feature维度
             n_head: multi-head attention的head个数
             ffw_mult: feedforward的参数量相对于feature的倍数 经验值为4
+            init_from_bert: 是否从预训练的BERT导入参数
+            layer_number: 如果init_from_bert为True 即从BERT导入参数 layer_number代表导入BERT的层号
         """
         super(LMBlock, self).__init__()
         self.dim = dim
         self.n_head = n_head
         self.ffw_mult = ffw_mult
-        self.pre_norm = tf.keras.layers.LayerNormalization()
         if self.dim % n_head != 0:
             raise ValueError(
                 "参数dim必须整除n_head"
             )
         self.head_dim = self.dim // self.n_head
-        self.all_layers = list()
         self.attn = Attention(dim=self.dim, n_head=self.n_head, head_dim=self.head_dim)
+        self.norm = tf.keras.layers.LayerNormalization()
         self.ffw = utils.FeedForward(dim=self.dim, mult=self.ffw_mult)
-        self.layer_norm = tf.keras.layers.LayerNormalization()
 
     def call(self, inputs, training=None, mask=None):
         """
@@ -157,14 +162,28 @@ class LMBlock(tf.keras.Model):
         """
         input_tensor = inputs
         input_shape = modeling.get_shape_list(input_tensor, expected_rank=3)
-        assert self.dim == input_shape[2]
+        # assert self.dim == input_shape[2]
 
-        input_tensor = self.pre_norm(input_tensor)
         input_tensor = input_tensor + self.attn(inputs=(input_tensor, input_tensor))
         # self_attention + residual
+        input_tensor = self.norm(input_tensor)
+        # attn之后layer norm
         input_tensor = input_tensor + self.ffw(inputs=input_tensor)
         # ffw + residual
         return input_tensor
+
+    def load_bert_weights(self, layer_num=0):
+        self.build(input_shape=(None, None, self.dim))
+        attention_layer = self.get_layer(index=0)
+        layer_norm = self.get_layer(index=1)
+        ffw = self.get_layer(index=2)
+        bert_chinese_params_file = open('all_bert_chinese_L-12_H-768_A-12_params.pkl', 'rb')
+        bert_chinese_params = pickle.load(bert_chinese_params_file)
+        bert_chinese_params_file.close()
+        params = bert_chinese_params[layer_num]
+        attention_layer.set_weights(params['attn'])
+        layer_norm.set_weights(params['attn_norm'])
+        ffw.set_weights(params['ffw'])
 
 
 def main():
@@ -174,9 +193,24 @@ def main():
     n_head = 12
     ffw_mult = 4
     lm_block = LMBlock(dim=dim,  n_head=n_head, ffw_mult=ffw_mult)
-    input_tensor = tf.random.normal(shape=(batch, seq_len, dim))
-    output = lm_block(input_tensor)
-    print(output)
+    # lm_block.build(input_shape=(None, None, dim))
+    # print(lm_block.get_layer(index=0).get_weights())
+    # print('---------------------------------------')
+    # print(lm_block.get_layer(index=1).get_weights())
+    # print('---------------------------------------')
+    # print(lm_block.get_layer(index=2).get_weights())
+    # print('---------------------------------------')
+    lm_block.load_bert_weights(0)
+    print(lm_block.get_layer(index=0).get_weights())
+    print('---------------------------------------')
+    print(lm_block.get_layer(index=1).get_weights())
+    print('---------------------------------------')
+    print(lm_block.get_layer(index=2).get_weights())
+    print('---------------------------------------')
+    # input_tensor = tf.random.normal(shape=(batch, seq_len, dim))
+    # output = lm_block(input_tensor)
+    # print(output)
+    # print(lm_block.summary())
 
 
 if __name__ == '__main__':

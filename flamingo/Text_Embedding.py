@@ -1,5 +1,6 @@
 import tensorflow as tf
 import modeling
+import pickle
 
 # 若tf.get_variable出错 使用采用tf.Variable
 
@@ -18,10 +19,11 @@ class WordEmbedding(tf.keras.Model):
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
         self.word_embedding_name = word_embedding_name
-        self.embedding_table = tf.get_variable(
-            name=self.word_embedding_name,
-            shape=[self.vocab_size, self.embedding_size],
-            initializer=modeling.create_initializer())
+        # self.embedding_table = tf.get_variable(
+        #     name=self.word_embedding_name,
+        #     shape=[self.vocab_size, self.embedding_size],
+        #     initializer=modeling.create_initializer())
+        self.embedding_table = tf.Variable(tf.random.normal(shape=(self.vocab_size, self.embedding_size)))
 
     def call(self, inputs, training=None, mask=None):
         """
@@ -62,11 +64,12 @@ class TokenTypeEmbedding(tf.keras.Model):
         self.token_type_vocab_size = token_type_vocab_size
         self.embedding_size = embedding_size
         self.token_embedding_name = token_embedding_name
-        self.token_type_table = tf.get_variable(
-            name=self.token_embedding_name,
-            shape=[self.token_type_vocab_size, self.embedding_size],
-            initializer=modeling.create_initializer()
-        )
+        # self.token_type_table = tf.get_variable(
+        #     name=self.token_embedding_name,
+        #     shape=[self.token_type_vocab_size, self.embedding_size],
+        #     initializer=modeling.create_initializer()
+        # )
+        self.token_type_table = tf.Variable(tf.random.normal(shape=(self.token_type_vocab_size, self.embedding_size)))
 
     def call(self, inputs, training=None, mask=None):
         """
@@ -105,11 +108,12 @@ class PositionEmbedding(tf.keras.Model):
         self.max_position_embedding_size = max_position_embedding_size
         self.embedding_size = embedding_size
         self.position_embedding_name = position_embedding_name
-        self.full_position_embedding = tf.get_variable(
-            name=self.position_embedding_name,
-            shape=[self.max_position_embedding_size, self.embedding_size],
-            initializer=modeling.create_initializer()
-        )
+        # self.full_position_embedding = tf.get_variable(
+        #     name=self.position_embedding_name,
+        #     shape=[self.max_position_embedding_size, self.embedding_size],
+        #     initializer=modeling.create_initializer()
+        # )
+        self.full_position_embedding = tf.Variable(tf.random.normal(shape=(self.max_position_embedding_size, self.embedding_size)))
 
     def call(self, inputs, training=None, mask=None):
         """
@@ -134,7 +138,7 @@ class PositionEmbedding(tf.keras.Model):
 
 class TextEmbedding(tf.keras.Model):
     """keras风格的word embedding + token type embedding + position embedding + layer_norm + dropout"""
-    def __init__(self, embedding_size, vocab_size, token_type_vocab_size, max_position_embedding_size, dropout_p=0.1):
+    def __init__(self, embedding_size=768, vocab_size=21128, token_type_vocab_size=2, max_position_embedding_size=512, dropout_p=0.1):
         """
         参数:
             embedding_size: 将文本token ids映射到的维度
@@ -173,6 +177,17 @@ class TextEmbedding(tf.keras.Model):
         output = self.dropout(output)
         return output
 
+    def load_bert_weights(self):
+        word_embedding = self.get_layer(index=0)
+        token_type_embedding = self.get_layer(index=1)
+        position_embedding = self.get_layer(index=2)
+        bert_chinese_params_file = open('all_bert_chinese_L-12_H-768_A-12_params.pkl', 'rb')
+        bert_chinese_params = pickle.load(bert_chinese_params_file)
+        bert_chinese_params_file.close()
+        word_embedding.set_weights(bert_chinese_params['word_emb'])
+        token_type_embedding.set_weights(bert_chinese_params['token_type_emb'])
+        position_embedding.set_weights(bert_chinese_params['position_emb'])
+
 
 def main():
     input_ids = tf.constant(
@@ -180,9 +195,20 @@ def main():
     token_type_ids = tf.constant(
         [[0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 1, 1, 1], [0, 0, 1, 1, 1, 0, 0]]
     )
-    text_embedding_object = TextEmbedding(embedding_size=768, vocab_size=21000, token_type_vocab_size=16, max_position_embedding_size=512)
-    output = text_embedding_object(inputs=(input_ids, token_type_ids))
-    print(output.shape)
+    text_embedding_object = TextEmbedding()
+    print(text_embedding_object.get_layer(index=0).get_weights())
+    print('---------------------------------------')
+    print(text_embedding_object.get_layer(index=1).get_weights())
+    print('---------------------------------------')
+    print(text_embedding_object.get_layer(index=2).get_weights())
+    print('---------------------------------------')
+    text_embedding_object.load_bert_weights()
+    print(text_embedding_object.get_layer(index=0).get_weights())
+    print('---------------------------------------')
+    print(text_embedding_object.get_layer(index=1).get_weights())
+    print('---------------------------------------')
+    print(text_embedding_object.get_layer(index=2).get_weights())
+    print('---------------------------------------')
 
 
 if __name__ == '__main__':
