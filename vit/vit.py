@@ -10,17 +10,17 @@ from einops import rearrange, repeat
 
 class PreNorm(nn.Module):
     # 实现pre-norm功能
-    def __init__(self, norm_dim, func):
+    def __init__(self, norm_dim, the_func):
         """
         norm_dim: 进行layer norm的维度
-        func: 需要加在norm后的函数方法
+        the_func: 需要加在norm后的函数方法
         """
         super().__init__()
-        self.func = func
+        self.the_func = the_func
         self.norm = nn.LayerNorm(norm_dim)
 
     def forward(self, x, **kwargs):
-        return self.func(self.norm(x), **kwargs)
+        return self.the_func(self.norm(x), **kwargs)
 
 
 class FeedForward(nn.Module):
@@ -67,6 +67,7 @@ class Attention(nn.Module):
 
     def forward(self, x, mask=None):
         # x: [B, S, E]
+        # mask: [B, S]
 
         qkv = self.to_qkv(x).chunk(3, dim=-1)
         # 经过to_qkv计算得到[B, S, 3*E]， 之后chunk分割得到qkv: [3, B S, E]
@@ -78,7 +79,9 @@ class Attention(nn.Module):
         # [B, head, S, S]
 
         if mask is not None:
-            attention_score = attention_score.mask_fill(mask == 0, -1e9)
+            mask = rearrange(mask, 'b s -> b 1 1 s')
+            # 需要扩展维度才能广播
+            attention_score = attention_score.masked_fill(mask == 0, -1e9)
             # mask矩阵中为0为需要mask的地方 mask值为负无穷则softmax为0
         attention = self.attend(attention_score)
 
@@ -104,9 +107,9 @@ class Transformer(nn.Module):
         # 构建多层 每一层都是一个ModuleList 其中一个attention 一个ffw
         # 共有num_layers层
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         for attn, ffw in self.layers:
-            x = attn(x) + x
+            x = attn(x, mask=mask) + x
             x = ffw(x) + x
             # 实现add功能
         return x
@@ -152,7 +155,7 @@ class ViT(nn.Module):
             nn.Linear(d_model, num_classes)
         )
 
-    def forward(self, img):
+    def forward(self, img, mask=None):
         # img [batch, height, width, channel]
         image_embedding = self.to_image_embedding(img)
         # [batch, num_patches, d_model]
@@ -164,7 +167,7 @@ class ViT(nn.Module):
         x = torch.cat([all_cls, image_embedding], dim=1)
         x = x + self.pos_embedding
 
-        x = self.transformer(x)
+        x = self.transformer(x, mask=mask)
         # [batch, seq_len+1, d_model]
 
         feature = x[:, 0, :]
