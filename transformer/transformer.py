@@ -4,6 +4,7 @@
 
 import torch
 import torch.nn as nn
+from torch.nn.functional import log_softmax
 
 from einops import rearrange, repeat
 from utils import clones, TrainState, Batch
@@ -80,12 +81,12 @@ class Attention(nn.Module):
 
         if attn_mask is not None:
             attn_mask = rearrange(attn_mask, 'i j -> 1 1 i j')
-            attention_score.masked_fill(attn_mask == 0, -1e9)
+            attention_score = attention_score.masked_fill(attn_mask == 0, -1e9)
         # 作用attn_mask
 
         if pad_mask is not None:
             pad_mask = rearrange(pad_mask, 'b s -> b 1 1 s')
-            attention_score.masked_fill(pad_mask == 0, -1e9)
+            attention_score = attention_score.masked_fill(pad_mask == 0, -1e9)
         # 作用pad_mask
 
         attention = self.attend(attention_score)
@@ -96,6 +97,9 @@ class Attention(nn.Module):
         output = rearrange(output, 'b h s d -> b s (h d)')
         # [batch, seq_len_out, d_model]
         output = self.output_proj(output)
+        del query
+        del key
+        del value
         return output
 
 
@@ -282,6 +286,7 @@ class Generator(nn.Module):
         x = self.output_proj(x)
         # [batch, seq_len, vocab_size]
         return self.attend(x)
+        # return log_softmax(x)
         # return x
 
 
@@ -328,7 +333,7 @@ def run_epoch(
         mode='train',
         accum_iter=1,
         # 梯度累计更新次数 ------------ 代表了经过accum_iter个mini-batch后再更新一次梯度
-        train_state=TrainState()
+        train_state=TrainState(),
 ):
     start_time = time.time()
     total_tokens = 0
@@ -336,7 +341,7 @@ def run_epoch(
     tokens = 0
     n_accum = 0
     for i, batch in enumerate(data_iter):
-        output = model(batch.src, batch.tgt,batch.tgt_mask, batch.src_pad_mask, batch.tgt_pad_mask)
+        output = model(batch.src, batch.tgt, batch.tgt_mask, batch.src_pad_mask, batch.tgt_pad_mask)
         # 模型推理
         loss, loss_node = loss_compute(output, batch.tgt_target, batch.all_tgt_tokens)
         # 计算损失函数
@@ -354,7 +359,7 @@ def run_epoch(
             if i % accum_iter == 0 or (i + 1) == len(data_iter):
                 # 每accum_iter个mini-batch更新一次模型参数 或者 在最后一次更新
                 optimizer.step()
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
                 n_accum += 1
                 train_state.accum_step += 1
             scheduler.step()
@@ -377,3 +382,20 @@ def run_epoch(
         del loss
         del loss_node
     return total_loss / total_tokens, train_state
+
+
+def MultiHeadAttentionTest():
+    attention = Attention(5, 1)
+    query, key, value = torch.randn(size=(6, 3, 5)).chunk(3, dim=0)
+    # batch=2 seq_len=3 d_model=5
+    attn_mask = torch.tensor([[1, 0, 0],
+                              [1, 1, 0],
+                              [1, 1, 1]])
+    pad_mask = torch.tensor([[0, 1, 1],
+                             [1, 0, 1]])
+    attention(query, key, value, attn_mask, pad_mask)
+    print(attention.attn)
+
+
+if __name__ == '__main__':
+    MultiHeadAttentionTest()

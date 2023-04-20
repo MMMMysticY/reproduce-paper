@@ -38,28 +38,33 @@ class SimpleLossCompute:
         sloss = (
                 self.criterion(
                     y.contiguous().view(-1, y.shape[-1]), target.contiguous().view(-1)
-                ) / token_nums
+                )
+                / token_nums
         )
-        return sloss.detach() * token_nums, sloss
+        return sloss.data * token_nums, sloss
 
 
 def main():
     vocab_size = 11
     # [0, 1, ... 10]为有效token 词表大小为11
-    criterion = LabelSmoothing(vocab_size=vocab_size, pad_idx=0, smooth=0.0)
+    criterion = LabelSmoothing(vocab_size, 0, 0.0)
     # 由于任务是要重复 所以置信度没有必要降低 即smooth=0.0
     loss_compute = SimpleLossCompute(criterion)
 
-    model = Transformer(vocab_size=vocab_size, d_model=256, hidden_dim=1024, head=4, encoder_layer_num=2,
+    model = Transformer(vocab_size=vocab_size, d_model=512, hidden_dim=2048, head=8, encoder_layer_num=2,
                         decoder_layer_num=2)
+
+    for p in model.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.5, betas=(0.9, 0.98), eps=1e-9)
 
     lr_schedular = LambdaLR(optimizer,
-                            lr_lambda=lambda step: rate(step, 64, 1.0, 400))
+                            lr_lambda=lambda step: rate(step, 512, 1.0, 400))
 
     batch_size = 80
-    for epoch in range(50):
+    for epoch in range(15):
         # 训练部分
         model.train()
         run_epoch(
@@ -69,7 +74,7 @@ def main():
             loss_compute=loss_compute,
             optimizer=optimizer,
             scheduler=lr_schedular,
-            mode='train'
+            mode='train',
         )
 
     # 测试部分
@@ -79,7 +84,7 @@ def main():
     batch, seq_len = src.shape
     src_pad_mask = src != 0
 
-    tgt = torch.zeros(size=(1, 1)).type_as(src)
+    tgt = torch.ones(size=(1, 1)).type_as(src)
     # 以[SOS]作为初始值进行推理
     result = torch.zeros(size=(1, 1)).type_as(src)
     # 纪录decoder最终的输出结果
@@ -102,12 +107,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-    # all_data = data_gen(11, 2, 5, 3)
-    # for each in all_data:
-    #     print(each.src)
-    #     print(each.tgt)
-    #     print(each.tgt_target)
-    #     print(each.tgt_mask)
-    #     print(each.src_pad_mask)
-    #     print(each.tgt_pad_mask)

@@ -78,6 +78,16 @@ class Batch:
         self.all_tgt_tokens = self.tgt_pad_mask.data.sum()
         # 对True位置的加和 即表示非mask正常token的数量
 
+    def to_deivce(self, device):
+        print(device)
+        self.src = self.src.to(device)
+        self.src_pad_mask = self.src_pad_mask.to(device)
+        self.tgt = self.tgt.to(device)
+        self.tgt_target = self.tgt_target.to(device)
+        self.tgt_mask = self.tgt_mask.to(device)
+        self.tgt_pad_mask = self.tgt_pad_mask.to(device)
+
+
 
 class TrainState:
     """
