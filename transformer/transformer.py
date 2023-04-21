@@ -238,7 +238,7 @@ class PositionalEmbedding(nn.Module):
         assert d_model % 2 == 0
         # d_model为偶数时 才满足公式中2i的要求
 
-        self.pe = torch.zeros(max_len, d_model)
+        pe = torch.zeros(max_len, d_model)
         # pe的维度是[seq_len, d_model] 制作一个max_len, d_model的能够适应各种seq_len
         positions = torch.arange(0, max_len).unsqueeze(1)
         # 位置为[max_len, 1] 用以对每个位置加以不一样的pe，而同一个位置
@@ -252,13 +252,13 @@ class PositionalEmbedding(nn.Module):
         the_matrix = positions * div_term
         # pos[max_len, 1] div [d_model//2] 采用广播机制计算得出结果[max_len, d_model//2]
         # 即成公式中的pos/10000^2i/d_model 表达式
-        self.pe[:, 0::2] = torch.sin(the_matrix)
-        self.pe[:, 1::2] = torch.cos(the_matrix)
+        pe[:, 0::2] = torch.sin(the_matrix)
+        pe[:, 1::2] = torch.cos(the_matrix)
         # 偶数位置为对the_matrix的sin值 奇数位置为cos值
 
-        self.pe = self.pe.unsqueeze(0)
+        pe = pe.unsqueeze(0)
         # [1, seq_len, d_model]
-
+        self.register_buffer("pe", pe)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
@@ -291,9 +291,11 @@ class Generator(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, vocab_size, d_model, hidden_dim, head, encoder_layer_num, decoder_layer_num, dropout=0.1):
+    def __init__(self, src_vocab_size, tgt_vocab_size, d_model, hidden_dim, head, encoder_layer_num, decoder_layer_num, dropout=0.1):
         super(Transformer, self).__init__()
-        self.word_embedding = WordEmbedding(vocab_size, d_model)
+        self.src_word_embedding = WordEmbedding(src_vocab_size, d_model)
+        self.tgt_word_embedding = WordEmbedding(tgt_vocab_size, d_model)
+        # 有可能存在src和tgt两种语言而词表大小不同的情况 所以分开embedding
         self.positional_embedding = PositionalEmbedding(d_model)
 
         encoder_layer = EncoderLayer(d_model, hidden_dim, head, dropout, dropout)
@@ -302,7 +304,7 @@ class Transformer(nn.Module):
         self.encoder = Encoder(d_model, encoder_layer, encoder_layer_num)
         self.decoder = Decoder(decoder_layer, d_model, decoder_layer_num)
 
-        self.generator = Generator(vocab_size, d_model)
+        self.generator = Generator(tgt_vocab_size, d_model)
 
     def forward(self, src, tgt, tgt_mask=None, src_pad_mask=None, tgt_pad_mask=None):
         """
@@ -313,14 +315,15 @@ class Transformer(nn.Module):
         tgt_mask [seq_len_de, seq_len_de] 若用int或者float矩阵 0代表需要mask 若为Bool矩阵 则False代表需要mask  一般为上三角矩阵
         """
 
-        src = self.positional_embedding(self.word_embedding(src))
+        src = self.positional_embedding(self.src_word_embedding(src))
         # [batch, seq_len_en, d_model]
         memory = self.encoder(src, src_pad_mask)
 
-        tgt = self.positional_embedding(self.word_embedding(tgt))
+        tgt = self.positional_embedding(self.tgt_word_embedding(tgt))
+        # [batch, seq_len_out, d_model]
         output = self.decoder(tgt, memory, src_pad_mask, tgt_pad_mask, tgt_mask)
         output = self.generator(output)
-        # [batch, seq_len_de, vocab_size]
+        # [batch, seq_len_de, vocab_size_tgt]
         return output
 
 
@@ -356,7 +359,7 @@ def run_epoch(
             train_state.tokens += batch.all_tgt_tokens
             # 每个mini-batch反向传播一次
 
-            if i % accum_iter == 0 or (i + 1) == len(data_iter):
+            if i % accum_iter == 0:
                 # 每accum_iter个mini-batch更新一次模型参数 或者 在最后一次更新
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -368,14 +371,13 @@ def run_epoch(
         total_tokens += batch.all_tgt_tokens
         tokens += batch.all_tgt_tokens
         # 纪录信息
-        if i % 10 == 1 and (mode == 'train' or mode == 'train+log'):
+        if i % 40 == 0 and (mode == 'train' or mode == 'train+log'):
             lr = optimizer.param_groups[0]['lr']
             elapsed = time.time() - start_time
 
             print(
-                'Epoch Step: {} | Accumulation Step: {} | Loss: {} | Tokens/Sec : {} | lr : {}'.format(
-                    i, n_accum, loss / batch.all_tgt_tokens, tokens / elapsed, lr
-                )
+                ('Epoch Step: %6d | Accumulation Step: %3d | Loss: %6.2f | Tokens/Sec : %7.1f | lr : %6.1e'
+                 ) % (i, n_accum, loss / batch.all_tgt_tokens, tokens / elapsed, lr)
             )
             start_time = time.time()
             tokens = 0

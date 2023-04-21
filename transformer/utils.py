@@ -48,7 +48,7 @@ def rate(step, model_size, factor, warmup):
     if step == 0:
         step = 1
     return factor * (
-        model_size ** (-0.5) * min(step ** (-0.5), step * (warmup**(-1.5)))
+            model_size ** (-0.5) * min(step ** (-0.5), step * (warmup ** (-1.5)))
     )
 
 
@@ -57,6 +57,7 @@ class Batch:
     Batch对象对输入的src和tgt生成对应的mask
     本实现的mask规则 若用int或者float矩阵 0代表需要mask 若为Bool矩阵 则False代表需要mask
     """
+
     def __init__(self, src, tgt=None, pad=0):
         # 0-> pad token
         # src tgt [batch, seq_len_in/out] int token
@@ -79,7 +80,6 @@ class Batch:
         # 对True位置的加和 即表示非mask正常token的数量
 
     def to_deivce(self, device):
-        print(device)
         self.src = self.src.to(device)
         self.src_pad_mask = self.src_pad_mask.to(device)
         self.tgt = self.tgt.to(device)
@@ -88,15 +88,14 @@ class Batch:
         self.tgt_pad_mask = self.tgt_pad_mask.to(device)
 
 
-
 class TrainState:
     """
     静态类 统计训练过程中的各个指标情况
     """
-    step: int = 0           # 当前的步数
-    accum_step: int = 0     # 梯度累计的次数 ------- 数个mini-batch更新一次网络参数，该参数记录了更新参数的次数
-    samples: int = 0        # 已经用到的样本个数
-    tokens: int = 0         # 用到的token个数
+    step: int = 0  # 当前的步数
+    accum_step: int = 0  # 梯度累计的次数 ------- 数个mini-batch更新一次网络参数，该参数记录了更新参数的次数
+    samples: int = 0  # 已经用到的样本个数
+    tokens: int = 0  # 用到的token个数
 
 
 class LabelSmoothing(nn.Module):
@@ -106,6 +105,7 @@ class LabelSmoothing(nn.Module):
     注意：CrossEntropy作为loss function时 期望最后一层不加softmax或者logsoftmax
          而采用KLDiv作为loss function时 期望最后一层采用log-space number
     """
+
     def __init__(self, vocab_size, pad_idx, smooth=0.0):
         super(LabelSmoothing, self).__init__()
         # self.criterion = nn.CrossEntropyLoss()
@@ -124,12 +124,12 @@ class LabelSmoothing(nn.Module):
         assert y.shape[-1] == self.vocab_size
         true_dist = y.clone().detach()
         # [batch*seq_len, vocab_size]
-        true_dist.fill_(self.smooth / (self.vocab_size-2))
+        true_dist.fill_(self.smooth / (self.vocab_size - 2))
         # 除了true token和pad token 其他位置设置为缓冲值 而非原来的0值
 
         true_label_idx = target.detach().unsqueeze(1)
         # [batch*seq_len, 1]
-        confidence_matrix = repeat(torch.FloatTensor([self.confidence]), '1 -> b 1', b=true_label_idx.shape[0])
+        confidence_matrix = repeat(torch.FloatTensor([self.confidence]), '1 -> b 1', b=true_label_idx.shape[0]).to(true_dist.device)
         # [batch*seq_len, 1] 为了迎合scatter中index和src一一对应关系
         true_dist.scatter_(dim=1, index=true_label_idx, src=confidence_matrix)
         # scatter_分发 index为[batch*seq_len, 1] index表示的是每个样本对应的vocab_size的值 所以dim=1
@@ -150,6 +150,26 @@ class LabelSmoothing(nn.Module):
             # [batch*seq_len, vocab_size] 即对某个样本的所有vocab_size全mask
         self.true_dist = true_dist
         return self.criterion(y, true_dist.clone().detach())
+
+
+class SimpleLossCompute:
+    """
+    结合LabelSmoothing起作用
+    """
+    def __init__(self, criterion):
+        self.criterion = criterion
+
+    def __call__(self, y, target, token_nums):
+        # y [batch, seq_len, vocab_size]
+        # target [batch, seq_len]
+        # 返回值第一个是数值型loss 第二个是带梯度的 反向传播使用
+        sloss = (
+                self.criterion(
+                    y.contiguous().view(-1, y.shape[-1]), target.contiguous().view(-1)
+                )
+                / token_nums
+        )
+        return sloss.data * token_nums, sloss
 
 
 if __name__ == '__main__':

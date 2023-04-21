@@ -6,7 +6,7 @@
 
 import torch
 import torch.nn as nn
-from utils import Batch, LabelSmoothing, rate, generate_sequence_mask
+from utils import Batch, LabelSmoothing, rate, generate_sequence_mask, SimpleLossCompute
 from transformer import Transformer, run_epoch
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -27,23 +27,6 @@ def data_gen(max_vocab_num, batch_size, seq_len, nbatches):
         yield Batch(src, tgt, 0)
 
 
-class SimpleLossCompute:
-    def __init__(self, criterion):
-        self.criterion = criterion
-
-    def __call__(self, y, target, token_nums):
-        # y [batch, seq_len, vocab_size]
-        # target [batch, seq_len]
-        # 返回值第一个是数值型loss 第二个是带梯度的 反向传播使用
-        sloss = (
-                self.criterion(
-                    y.contiguous().view(-1, y.shape[-1]), target.contiguous().view(-1)
-                )
-                / token_nums
-        )
-        return sloss.data * token_nums, sloss
-
-
 def main():
     vocab_size = 11
     # [0, 1, ... 10]为有效token 词表大小为11
@@ -51,8 +34,8 @@ def main():
     # 由于任务是要重复 所以置信度没有必要降低 即smooth=0.0
     loss_compute = SimpleLossCompute(criterion)
 
-    model = Transformer(vocab_size=vocab_size, d_model=512, hidden_dim=2048, head=8, encoder_layer_num=2,
-                        decoder_layer_num=2)
+    model = Transformer(src_vocab_size=vocab_size, tgt_vocab_size=vocab_size, d_model=512, hidden_dim=2048, head=8,
+                        encoder_layer_num=2,decoder_layer_num=2)
 
     for p in model.parameters():
         if p.dim() > 1:
@@ -76,7 +59,7 @@ def main():
             scheduler=lr_schedular,
             mode='train',
         )
-
+        break
     # 测试部分
     model.eval()
     src = torch.LongTensor([[1, 2, 3, 4, 5, 6, 7, 8, 9]])
