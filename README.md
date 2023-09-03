@@ -8,3 +8,5 @@
 [ViT实现 pytorch](vit/vit.py)
 4. clip
 未完成[cilp](clip/clip.py)
+5. mmoe
+[mmoe tf1.12](mome/mome.py)
