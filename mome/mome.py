@@ -14,7 +14,7 @@ class MOMEModel:
         # 2个expert 3个task
 
         dnn_hidden_units = [64, 32]
-        gate_hidden_units = [16, 8, 2]
+        gate_hidden_units = [16, 8, 4]
         # 隐层参数
 
         experts_list = []
@@ -23,14 +23,18 @@ class MOMEModel:
         with tf.variable_scope(name_or_scope="mome") as scope:
             for num in range(expert_num):
                 feature = self.dnn_net(
-                    input_tensor, dnn_hidden_units, 'lrelu', "expert_{}".format(num))
+                    input_tensor, dnn_hidden_units, "expert_{}".format(num))
                 experts_list.append(feature)
                 # expert_num个tensor 每个tensor为[batch, hidden]
             # 每个expert进行输入特征抽取
 
             for num in range(n_tasks):
                 gate = self.dnn_net(
-                    input_tensor, gate_hidden_units, 'softmax', "gate_{}".format(num))
+                    input_tensor, gate_hidden_units, "gate_{}_main_net".format(num))
+                gate = self.logits_layer(
+                    gate, expert_num, name='gate_{}_logits'.format(num))
+                # dnn_net + logits_layer进行特征计算
+                gate = tf.nn.softmax(gate)  # softmax计算结果
                 gates_list.append(gate)
                 # n_tasks个tensor 每个tensor为[batch, expert_num]
             # 每个任务都对应一个gate的计算
@@ -48,7 +52,7 @@ class MOMEModel:
                 # 所有expert的结果加和得到结果 [batch, hidden]
                 gated_features = tf.reduce_sum(gated_features, axis=1)
                 task_result = self.logits_layer(
-                    gated_features, 1, "task_{}".format(num))
+                    gated_features, 1, "task_{}_logits".format(num))
                 task_result_list.append(task_result)
 
             # 方法二 矩阵相乘法 直接做到了对应系数相乘和加和 本身矩阵相乘的功能就是这样
@@ -60,43 +64,25 @@ class MOMEModel:
                 gated_features = tf.matmul(features, gate, tanspose_a=True)
                 # [batch, hidden, 1]
                 gated_features = tf.reshape(
-                    gated_features, (gated_features.shape[0], -1))
+                    gated_features, (-1, gated_features.shape[1]))  # 此处不宜用(shape[0], -1) 因为在构图时batch往往为None
                 # [batch, hidden]
                 task_result = self.logits_layer(
-                    gated_features, 1, "task_{}".format(num))
+                    gated_features, 1, "task_{}_logits".format(num))
                 task_result_list.append(task_result)
 
             return task_result
 
-    def dnn_net(self, input_tensor, dnn_hidden_units, act_func, name):
+    def dnn_net(self, input_tensor, dnn_hidden_units, name):
         with tf.variable_scope(name_or_scope="{}_dnn_hidden_layer".format(name)) as scope:
-            if act_func == 'lrelu':
-                for layer_id, num_hidden_units in enumerate(dnn_hidden_units):
-                    with tf.variable_scope("hidden_layer_{}".format(layer_id)) as dnn_layer_scope:
-                        input_tensor = layers.fully_connected(
-                            input_tensor,
-                            num_hidden_units,
-                            'lrelu',
-                            scope=dnn_layer_scope,
-                            normalizer_fn=layers.batch_norm
-                        )
-            else:
-                for layer_id in range(dnn_hidden_units-1):
-                    num_hidden_units = dnn_hidden_units[layer_id]
-                    with tf.variable_scope("hidden_layer_{}".format(layer_id)) as dnn_layer_scope:
-                        input_tensor = layers.fully_connected(
-                            input_tensor,
-                            num_hidden_units,
-                            'lrelu',
-                            scope=dnn_layer_scope,
-                            normalizer_fn=layers.batch_norm
-                        )
-                    with tf.variable_scope('hidden_layer_{}'.format(len(dnn_hidden_units)-1)) as dnn_layer_scope:
-                        input_tensor = layers.fully_conncted(
-                            input_tensor,
-                            num_hidden_units[-1],
-                            'softmax'
-                        )
+            for layer_id, num_hidden_units in enumerate(dnn_hidden_units):
+                with tf.variable_scope("hidden_layer_{}".format(layer_id)) as dnn_layer_scope:
+                    input_tensor = layers.fully_connected(
+                        input_tensor,
+                        num_hidden_units,
+                        'lrelu',
+                        scope=dnn_layer_scope,
+                        normalizer_fn=layers.batch_norm
+                    )
         return input_tensor
 
     def logits_layer(self, input_tensor=None, output_shape=1, name=None):
